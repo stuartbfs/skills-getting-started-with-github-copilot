@@ -10,8 +10,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await fetch("/activities");
       const activities = await response.json();
 
-      // Clear loading message
+      // Clear loading message and existing content
       activitiesList.innerHTML = "";
+      
+      // Clear existing dropdown options (keep only the first "Select an activity" option)
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -20,11 +23,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
+        // Create participants list HTML
+        let participantsList = '';
+        if (details.participants.length > 0) {
+          participantsList = `
+            <div class="participants-section">
+              <p><strong>Current Participants:</strong></p>
+              <ul class="participants-list">
+                ${details.participants.map(participant => `
+                  <li>
+                    <span class="participant-email">${participant}</span>
+                    <button class="delete-btn" data-activity="${name}" data-email="${participant}" title="Remove participant">
+                      ✕
+                    </button>
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          `;
+        } else {
+          participantsList = `
+            <div class="participants-section">
+              <p><strong>Current Participants:</strong></p>
+              <p class="no-participants">No participants yet. Be the first to sign up!</p>
+            </div>
+          `;
+        }
+
         activityCard.innerHTML = `
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          ${participantsList}
         `;
 
         activitiesList.appendChild(activityCard);
@@ -40,6 +71,55 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Error fetching activities:", error);
     }
   }
+
+  // Handle delete participant
+  async function deleteParticipant(activityName, email) {
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activityName)}/participants/${encodeURIComponent(email)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        // Refresh activities list
+        await fetchActivities();
+        
+        messageDiv.textContent = result.message;
+        messageDiv.className = "success";
+      } else {
+        messageDiv.textContent = result.detail || "An error occurred";
+        messageDiv.className = "error";
+      }
+
+      messageDiv.classList.remove("hidden");
+
+      // Hide message after 5 seconds
+      setTimeout(() => {
+        messageDiv.classList.add("hidden");
+      }, 5000);
+    } catch (error) {
+      messageDiv.textContent = "Failed to remove participant. Please try again.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      console.error("Error removing participant:", error);
+    }
+  }
+
+  // Add event delegation for delete buttons
+  activitiesList.addEventListener("click", (event) => {
+    if (event.target.classList.contains("delete-btn")) {
+      const activityName = event.target.dataset.activity;
+      const email = event.target.dataset.email;
+      
+      if (confirm(`Are you sure you want to remove ${email} from ${activityName}?`)) {
+        deleteParticipant(activityName, email);
+      }
+    }
+  });
 
   // Handle form submission
   signupForm.addEventListener("submit", async (event) => {
@@ -59,6 +139,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = await response.json();
 
       if (response.ok) {
+        // Refresh activities list
+        await fetchActivities();
+        
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
